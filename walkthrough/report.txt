@@ -1,0 +1,119 @@
+Scenario Breakdown:
+
+    Reporting Event:
+        Bob, a student on the platform, reports Stacy, another student, for inappropriate behavior or content. This report is logged in the Report table in the database.
+
+    plaintext
+
+    Report Table:
+    | id | reportedUserId | reportingUserId | reportReason          | createdAt           |
+    |----|----------------|-----------------|-----------------------|---------------------|
+    | 1  | Stacy's userID | Bob's userID    | Inappropriate content | Timestamp of report |
+
+    Database Structure:
+        The Report table records:
+            id: Unique identifier for each report.
+            reportedUserId: Identifies the user who was reported (Stacy).
+            reportingUserId: Identifies the user who made the report (Bob).
+            reportReason: Explanation provided by Bob for the report.
+            createdAt: Timestamp when the report was submitted.
+
+Actions for Superadmin/Admin:
+
+Upon receiving the report, a superadmin or admin might perform the following actions:
+
+    Review and Investigate:
+        Access the report through administrative tools or a dashboard.
+        View details such as who reported whom, the reason provided, and timestamp.
+
+    Moderation Decision:
+        Based on the report's content and severity, decide on appropriate actions:
+            Warning: If the offense is minor, issue a warning to Stacy.
+            Temporary Suspension: Temporarily suspend Stacy's account if the offense warrants it, with the ability to reinstate after a specified period.
+            Permanent Suspension: Permanently ban Stacy from the platform for serious violations or repeated offenses.
+
+    Communication:
+        Notify both Bob and Stacy (if applicable) about the outcome of the report.
+        Provide clear reasons for the decision and any steps that must be taken (e.g., appeal process).
+
+    Analytics and Trends:
+        Use aggregated report data to identify trends or patterns of misconduct across the platform.
+    Implement preventive measures or educational initiatives based on insights gathered.
+
+    import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function handleReport(reportId: number) {
+  const report = await prisma.report.findUnique({
+    where: { id: reportId },
+    include: {
+      reportedUser: true,    // Fetch details of the reported user (Stacy)
+      reportingUser: true,   // Fetch details of the reporting user (Bob)
+    },
+  });
+
+  if (!report) {
+    throw new Error('Report not found');
+  }
+
+  // Example moderation actions based on report details
+  if (report.reportReason.includes('inappropriate')) {
+    // Determine severity and take appropriate action
+    await prisma.user.update({
+      where: { id: report.reportedUserId },
+      data: { status: 'suspended' }, // Example: suspend Stacy's account
+    });
+  }
+
+  // Notify users, log actions, etc.
+}
+
+// Usage example
+handleReport(1)
+  .then(() => console.log('Report handled successfully'))
+  .catch((error) => console.error('Error handling report:', error))
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+
+
+model User {
+  id              Int       @id @default(autoincrement())
+  username        String
+  role            Role      @default(STUDENT)
+  assignedReports Report[]  @relation("assignedReports")
+}
+
+model Course {
+  id        Int      @id @default(autoincrement())
+  name      String
+  reports   Report[]
+  admins    User[]
+}
+
+model Report {
+  id                Int       @id @default(autoincrement())
+  reportedUserId    Int       @map("reported_user_id")
+  reportingUserId   Int       @map("reporting_user_id")
+  reportReason      String
+  createdAt         DateTime  @default(now())
+  reportedUser      User      @relation("reportedUser", fields: [reportedUserId], references: [id])
+  reportingUser     User      @relation("reportingUser", fields: [reportingUserId], references: [id])
+  course            Course?   @relation(fields: [courseId], references: [id])
+  courseId          Int?      @map("course_id")
+  assignedAdmin     User?     @relation("assignedReports", fields: [assignedAdminId], references: [id])
+  assignedAdminId   Int?      @map("assigned_admin_id")
+}
+async function getReportsForAdmin(adminId: number) {
+  const admin = await prisma.user.findUnique({
+    where: { id: adminId },
+    include: { courses: { include: { reports: true } } },
+  });
+
+  if (!admin) {
+    throw new Error('Admin not found');
+  }
+
+  return admin.courses.flatMap((course) => course.reports);
+}
